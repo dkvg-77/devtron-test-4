@@ -1,0 +1,21 @@
+# release-values.yaml
+# Deployment-time / dynamic values merged by Devtron at release. NOT a GUI knob.
+#
+# image.repository / image.tag are placeholders Devtron replaces at deploy time
+# from the rendered .image_descriptor_template.json (built image repo + tag).
+# Keep image.useBuilt: false so the Deployment uses the repository:tag path
+# (Iteration A) that Devtron is injecting — NOT the registry/digest path.
+image:
+  repository: IMAGE_REPO
+  tag: IMAGE_TAG
+  useBuilt: false
+
+# Strategy/timing fields Devtron's schema expects. NOTE: this chart's rollout is
+# driven by the Flagger Canary, not Devtron — so these are no-ops here. Kept only
+# to satisfy the upload schema.
+pauseForSecondsBeforeSwitchActive: 0
+waitForSecondsBeforeScalingDown: 0
+autoPromotionSeconds: 30
+
+# used for deployment algo selection
+orchestrator.deploymant.algo: 1

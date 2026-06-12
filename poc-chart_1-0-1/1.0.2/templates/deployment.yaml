@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}
+  labels:
+    app: {{ .Values.appName }}
+spec:
+  # No spec.replicas on purpose — the HPA owns the replica count, so Flux's
+  # helm-controller and Flagger never tug-of-war over it.
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+      annotations:
+        prometheus.io/scrape: "true"               # let Prometheus scrape this pod
+        prometheus.io/port: {{ .Values.service.port | quote }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532          # numeric UID required to verify non-root; overrides podinfo's named "app" user
+        runAsGroup: 65532
+        fsGroup: 65532            # so the /tmp emptyDir is writable by the non-root user
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ .Values.appName }}
+          {{- if .Values.image.useBuilt }}
+          # Iteration B: our own image, pinned by digest (signed + scanned in CI).
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.name }}@{{ .Values.image.digest }}"
+          {{- else }}
+          # Iteration A: upstream podinfo by tag.
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          command:                                  # podinfo-specific (Iteration A); drop for Iteration B
+            - ./podinfo
+            - --port={{ .Values.service.port }}
+            - --level=info
+          readinessProbe:                           # Layer-1 health: ready for traffic?
+            httpGet: { path: /readyz, port: {{ .Values.service.port }} }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:                            # Layer-1 health: alive?
+            httpGet: { path: /healthz, port: {{ .Values.service.port }} }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

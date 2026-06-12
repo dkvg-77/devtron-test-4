@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "title": "poc-chart deployment template",
+  "description": "Canaried microservice (Deployment + HPA + Flagger Canary). GUI schema that renders the Devtron deployment template.",
+  "properties": {
+    "global": {
+      "type": "object",
+      "title": "Global",
+      "description": "Values shared across the chart. Set per-environment by the platform.",
+      "properties": {
+        "imageRegistry": {
+          "type": "string",
+          "title": "Image Registry",
+          "description": "Container registry prefix, e.g. us-central1-docker.pkg.dev/<project>/shared-artifacts. Used only when image.useBuilt is true."
+        }
+      }
+    },
+    "appName": {
+      "type": "string",
+      "title": "App Name",
+      "description": "Name of the Deployment / Service / HPA / Canary. This is the Flagger target."
+    },
+    "image": {
+      "type": "object",
+      "title": "Image",
+      "description": "Workload image. useBuilt toggles between upstream podinfo (false) and the CI-built image (true).",
+      "properties": {
+        "useBuilt": {
+          "type": "boolean",
+          "title": "Use Built Image",
+          "description": "false = upstream podinfo by repository:tag (Iteration A). true = CI-built <registry>/<name>@<digest> (Iteration B)."
+        },
+        "repository": {
+          "type": "string",
+          "title": "Repository",
+          "description": "Image repository (Iteration A path). Devtron injects this at deploy time."
+        },
+        "tag": {
+          "type": "string",
+          "title": "Tag",
+          "description": "Image tag (Iteration A path). Devtron injects this at deploy time."
+        },
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "Image name appended to global.imageRegistry (Iteration B path)."
+        },
+        "digest": {
+          "type": "string",
+          "title": "Digest",
+          "description": "Image digest, baked at package time (Iteration B path)."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "title": "Pull Policy",
+          "description": "Kubernetes imagePullPolicy.",
+          "enum": ["IfNotPresent", "Always", "Never"]
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "title": "Service",
+      "description": "Service exposure.",
+      "properties": {
+        "port": {
+          "type": ["integer", "string"],
+          "title": "Port",
+          "description": "Port the application (and /metrics) is served on."
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "title": "Resources",
+      "description": "Minimum and maximum RAM and CPU available to the application.",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "title": "Requests",
+          "description": "What the container is guaranteed to get.",
+          "properties": {
+            "cpu": { "type": "string", "format": "cpu", "title": "CPU", "description": "Requested CPU." },
+            "memory": { "type": "string", "format": "memory", "title": "Memory", "description": "Requested memory." }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "title": "Limits",
+          "description": "The maximum a container can reach.",
+          "properties": {
+            "cpu": { "type": "string", "format": "cpu", "title": "CPU", "description": "CPU limit." },
+            "memory": { "type": "string", "format": "memory", "title": "Memory", "description": "Memory limit." }
+          }
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "title": "Autoscaling (HPA)",
+      "description": "The HPA owns the replica count so Flux and Flagger never fight over it.",
+      "properties": {
+        "enabled": { "type": "boolean", "title": "Enabled", "description": "Create the HorizontalPodAutoscaler." },
+        "minReplicas": { "type": ["integer", "string"], "title": "Min Replicas", "description": "Minimum replica count." },
+        "maxReplicas": { "type": ["integer", "string"], "title": "Max Replicas", "description": "Maximum replica count." },
+        "targetCPUUtilizationPercentage": { "type": ["integer", "string"], "title": "Target CPU %", "description": "Target average CPU utilization to scale on." }
+      }
+    },
+    "canary": {
+      "type": "object",
+      "title": "Canary (Flagger)",
+      "description": "Flagger Canary + MetricTemplates. Gated so the chart also installs on clusters without Flagger.",
+      "properties": {
+        "enabled": { "type": "boolean", "title": "Enabled", "description": "false = plain Deployment; true = Flagger-driven canary." },
+        "host": { "type": "string", "title": "Host", "description": "HTTPRoute hostname for the canary." },
+        "gateway": {
+          "type": "object",
+          "title": "Gateway",
+          "description": "Existing Gateway API Gateway the canary attaches to (cluster infra).",
+          "properties": {
+            "name": { "type": "string", "title": "Name", "description": "Gateway name." },
+            "namespace": { "type": "string", "title": "Namespace", "description": "Gateway namespace." }
+          }
+        },
+        "analysis": {
+          "type": "object",
+          "title": "Analysis",
+          "description": "Canary stepping and gate thresholds (driven by Flagger, not Devtron).",
+          "properties": {
+            "interval": { "type": "string", "title": "Interval", "description": "Time between canary checks, e.g. 60s." },
+            "threshold": { "type": ["integer", "string"], "title": "Threshold", "description": "Failed checks before rollback." },
+            "stepWeight": { "type": ["integer", "string"], "title": "Step Weight", "description": "Traffic % increment per step." },
+            "maxWeight": { "type": ["integer", "string"], "title": "Max Weight", "description": "Traffic % at which canary is promoted to primary." },
+            "successRateMin": { "type": ["integer", "string"], "title": "Min Success Rate %", "description": "Minimum % of non-5xx responses." },
+            "latencyMaxSeconds": { "type": ["number", "string"], "title": "Max Latency (s)", "description": "p99 latency budget in seconds." }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "title": "Metrics",
+          "description": "Prometheus source for the canary gates (cluster infra).",
+          "properties": {
+            "prometheusAddress": { "type": "string", "title": "Prometheus Address", "description": "Prometheus URL Flagger queries." }
+          }
+        }
+      }
+    }
+  }
+}

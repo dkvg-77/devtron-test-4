@@ -1,0 +1,7 @@
+apiVersion: v2
+appVersion: 6.0.0
+description: Canaried microservice chart for the CI-push -> Flux -> Flagger PoC (Deployment
+  + HPA + Flagger Canary + MetricTemplates). CI pushes and cosign-signs it; Flux verifies
+  and deploys; Flagger runs the canary.
+name: canary-test-2
+version: 1.0.2

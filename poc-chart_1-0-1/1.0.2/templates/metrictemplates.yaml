@@ -1,0 +1,51 @@
+{{- if .Values.canary.enabled }}
+# NOTE: the queries use Flagger's OWN templating ({{`{{ namespace }}`}}, etc.).
+# The backtick-escapes make Helm emit those tokens literally for Flagger to fill in.
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: {{ .Values.appName }}-success-rate
+spec:
+  provider:
+    type: prometheus
+    address: {{ .Values.canary.metrics.prometheusAddress }}
+  query: |
+    sum(
+        rate(
+            http_requests_total{
+                namespace="{{`{{ namespace }}`}}",
+                pod=~"{{`{{ target }}`}}-[0-9a-zA-Z]+(-[0-9a-zA-Z]+)",
+                status!~"5.."
+            }[{{`{{ interval }}`}}]
+        )
+    )
+    /
+    sum(
+        rate(
+            http_requests_total{
+                namespace="{{`{{ namespace }}`}}",
+                pod=~"{{`{{ target }}`}}-[0-9a-zA-Z]+(-[0-9a-zA-Z]+)"
+            }[{{`{{ interval }}`}}]
+        )
+    ) * 100
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: {{ .Values.appName }}-latency
+spec:
+  provider:
+    type: prometheus
+    address: {{ .Values.canary.metrics.prometheusAddress }}
+  query: |
+    histogram_quantile(0.99,
+      sum(
+        rate(
+          http_request_duration_seconds_bucket{
+            namespace="{{`{{ namespace }}`}}",
+            pod=~"{{`{{ target }}`}}-[0-9a-zA-Z]+(-[0-9a-zA-Z]+)"
+          }[{{`{{ interval }}`}}]
+        )
+      ) by (le)
+    )
+{{- end }}
