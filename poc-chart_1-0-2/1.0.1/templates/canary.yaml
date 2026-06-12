@@ -1,0 +1,47 @@
+{{- if .Values.canary.enabled }}
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: {{ .Values.appName }}
+spec:
+  provider: gatewayapi:v1                 # data plane = Gateway API (Envoy)
+  targetRef:                              # the Deployment Flagger watches (ONE image)
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.appName }}
+  {{- if .Values.autoscaling.enabled }}
+  autoscalerRef:                          # Flagger clones this HPA to <appName>-primary
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: {{ .Values.appName }}
+  {{- end }}
+  progressDeadlineSeconds: 600            # abort a stuck rollout after 10 min
+  service:
+    port: {{ .Values.service.port }}
+    targetPort: {{ .Values.service.port }}
+    gatewayRefs:                          # attach the generated HTTPRoute to this Gateway
+      - name: {{ .Values.canary.gateway.name }}
+        namespace: {{ .Values.canary.gateway.namespace }}
+    hosts:
+      - {{ .Values.canary.host }}
+  analysis:
+    interval: {{ .Values.canary.analysis.interval }}
+    threshold: {{ .Values.canary.analysis.threshold }}
+    maxWeight: {{ .Values.canary.analysis.maxWeight }}
+    stepWeight: {{ .Values.canary.analysis.stepWeight }}
+    metrics:
+      - name: success-rate
+        templateRef:
+          name: {{ .Values.appName }}-success-rate
+          namespace: {{ .Release.Namespace }}
+        thresholdRange:
+          min: {{ .Values.canary.analysis.successRateMin }}
+        interval: 1m
+      - name: latency
+        templateRef:
+          name: {{ .Values.appName }}-latency
+          namespace: {{ .Release.Namespace }}
+        thresholdRange:
+          max: {{ .Values.canary.analysis.latencyMaxSeconds }}
+        interval: 1m
+{{- end }}

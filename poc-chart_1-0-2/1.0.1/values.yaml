@@ -1,0 +1,72 @@
+# poc-chart — a realistic, canaried microservice chart for the
+# CI-push -> Flux -> Flagger PoC.
+#
+# Iteration A (this file's default): the workload image is upstream podinfo, a
+# real HTTP server that emits the Prometheus metrics Flagger's success-rate /
+# latency gates need. Lets the whole canary loop run end-to-end today.
+#
+# Iteration B (later): swap to a CI-built image — set global.imageRegistry +
+# image.name + image.digest, and chart-push injects the digest via
+# `--set image.digest=...`. The Deployment template already supports this.
+
+# Shared with every (sub)chart. Set per-environment by the Flux overlay
+# (the HelmRelease's values in the GitOps repo) — never hard-coded here.
+global:
+  imageRegistry: ""        # e.g. us-central1-docker.pkg.dev/dev-infra-test-497417/shared-artifacts
+
+# Name of the Deployment / Service / HPA / Canary. This is the Flagger target,
+# so pod names become <appName>-... and <appName>-primary-...
+appName: poc-app
+
+image:
+  # useBuilt switches the workload between the two iterations:
+  #   false (default) -> Iteration A: upstream podinfo by tag (a real server with /metrics,
+  #                      so Flagger's canary gates work). CI still bakes the digest below, but
+  #                      it stays UNUSED — so wiring the digest chain can't break the canary.
+  #   true  -> Iteration B: deploy our CI-built image as <global.imageRegistry>/<name>@<digest>.
+  #            Only flip this once that image is a real HTTP server that emits Prometheus metrics.
+  useBuilt: false
+  # Iteration A:
+  repository: ghcr.io/stefanprodan/podinfo
+  tag: "6.0.0"
+  # Iteration B:
+  name: poc-app
+  digest: ""              # baked at package time by chart-push (image_digest input)
+  pullPolicy: IfNotPresent
+
+service:
+  port: 9898               # podinfo serves HTTP and /metrics on 9898
+
+# Small footprint — the PoC cluster is CPU-constrained.
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { cpu: 200m, memory: 128Mi }
+
+# The HPA owns the replica count (no spec.replicas on the Deployment) so Flux and
+# Flagger never fight over it. Flagger clones this HPA to <appName>-primary.
+# NOTE: keys use Devtron's convention (MinReplicas/MaxReplicas/TargetCPUUtilizationPercentage,
+# capitalized) — Devtron reads these specific keys from the deployment template to manage
+# replicas, and rejects the template ("mandatory fields") if they're absent.
+autoscaling:
+  enabled: true
+  MinReplicas: 1
+  MaxReplicas: 3
+  TargetCPUUtilizationPercentage: 99   # high on purpose: keep the PoC stable, don't scale mid-demo
+
+# Flagger Canary + its MetricTemplates. Gated so the chart also installs on
+# clusters without Flagger (canary.enabled: false -> just a plain Deployment).
+canary:
+  enabled: true
+  host: poc-app.example.com            # HTTPRoute hostname (curl with this Host header)
+  gateway:
+    name: poc-gateway                  # reuse the existing Gateway in canary-poc
+    namespace: canary-poc
+  analysis:
+    interval: 60s
+    threshold: 5                       # 5 failed checks -> rollback
+    stepWeight: 20                     # 0 -> 20 -> 40
+    maxWeight: 40                      # promote to primary once canary reaches 40%
+    successRateMin: 99                 # % non-5xx
+    latencyMaxSeconds: 0.5             # p99 latency budget
+  metrics:
+    prometheusAddress: http://prometheus-server.monitoring:80
